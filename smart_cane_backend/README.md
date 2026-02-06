@@ -1,434 +1,297 @@
-# Smart Assistive Cane - AI Model & Backend Setup
+# Smart Cane Backend
 
-This guide will help you build and deploy the AI model and Flask backend for your Smart Assistive Cane project.
+A Flask-based REST API backend for the Smart Cane project that provides object detection and OCR (Optical Character Recognition) capabilities using YOLOv8 and EasyOCR.
 
-## 📋 Overview
+## Features
 
-**What this does:**
-1. **Object Detection**: YOLOv8 detects obstacles (person, chair, door, stairs, vehicle, etc.)
-2. **OCR**: EasyOCR reads text (signboards, room numbers, warnings)
-3. **Flask Backend**: REST API that processes images and returns results
-4. **MQTT Integration**: Communicates with ESP32 and React dashboard
+- **Object Detection**: Detect objects in images using YOLOv8
+- **OCR (Text Recognition)**: Extract text from images using EasyOCR
+- **RESTful API**: Simple HTTP endpoints for easy integration
+- **CORS Enabled**: Cross-Origin Resource Sharing support for frontend integration
 
-**Architecture:**
-```
-ESP32-CAM → MQTT → React Dashboard → Flask Backend (localhost:4000) → AI Models
-                                                   ↓
-                                            [YOLOv8 + OCR]
-                                                   ↓
-                                            Results back to ESP32
-```
+## Tech Stack
 
----
+- **Flask**: Web framework
+- **YOLOv8 (Ultralytics)**: Object detection model
+- **EasyOCR**: Optical character recognition
+- **PIL (Pillow)**: Image processing
+- **NumPy**: Numerical operations
 
-## 🚀 Quick Start Guide
+## Prerequisites
 
-### Step 1: Train AI Model in Google Colab
+- Python 3.8 or higher
+- pip (Python package manager)
 
-1. **Open Google Colab**: Go to [colab.research.google.com](https://colab.research.google.com)
+## Installation & Setup
 
-2. **Upload the notebook**:
-   - File → Upload notebook
-   - Choose `smart_cane_ai_training.ipynb`
-
-3. **Enable GPU**:
-   - Runtime → Change runtime type → GPU (T4)
-
-4. **Run all cells** (Ctrl+F9):
-   - Installs YOLOv8, EasyOCR
-   - Loads pretrained COCO model (80 object classes)
-   - Sets up OCR for English + Hindi
-   - Exports model files to Google Drive
-
-5. **Download these files** from Google Drive:
-   ```
-   smart_cane_models/
-   ├── yolov8n_smart_cane.pt    (AI model)
-   ├── model_info.json          (metadata)
-   ├── app.py                   (Flask code)
-   └── requirements.txt         (dependencies)
-   ```
-
----
-
-### Step 2: Setup Flask Backend in VS Code
-
-#### 2.1 Create Project Structure
+### 1. Clone the Repository
 
 ```bash
-smart_cane_backend/
-├── app.py                      # Main Flask application
-├── requirements.txt            # Python dependencies
-├── models/
-│   ├── yolov8n_smart_cane.pt  # YOLO model
-│   └── model_info.json        # Model metadata
-└── README.md                  # This file
+git clone https://github.com/Sahil-SS/Smart-Cane.git
+cd Smart-Cane/smart_cane_backend
 ```
 
-#### 2.2 Install Python Dependencies
+### 2. Create Virtual Environment
 
+Create a virtual environment named `venv`:
+
+**On Windows:**
 ```bash
-# Create virtual environment (optional but recommended)
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
 
-# Install dependencies
+**On macOS/Linux:**
+```bash
+python3 -m venv venv
+```
+
+### 3. Activate Virtual Environment
+
+**On Windows:**
+```bash
+venv\Scripts\activate
+```
+
+**On macOS/Linux:**
+```bash
+source venv/bin/activate
+```
+
+You should see `(venv)` prefix in your terminal, indicating the virtual environment is active.
+
+### 4. Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-**requirements.txt contents:**
-```
-flask==3.0.0
-flask-cors==4.0.0
-ultralytics==8.1.0
-easyocr==1.7.1
-opencv-python==4.9.0.80
-pillow==10.2.0
-numpy==1.26.3
-torch==2.1.2
-torchvision==0.16.2
-paho-mqtt==1.6.1
-```
-
-#### 2.3 Configure MQTT Broker
-
-In `app.py`, update MQTT settings:
-
-```python
-MQTT_BROKER = "broker.hivemq.com"  # Or your broker
-MQTT_PORT = 1883
-MQTT_TOPIC_ESP32_DATA = "smart_cane/esp32/data"
-MQTT_TOPIC_RESULTS = "smart_cane/results"
-```
-
-**Free MQTT Brokers:**
-- `broker.hivemq.com` (public)
-- `test.mosquitto.org` (public)
-- Or run local broker: `mosquitto -v`
-
-#### 2.4 Run Flask Server
+### 5. Run the Application
 
 ```bash
 python app.py
 ```
 
-Expected output:
-```
-🤖 Loading AI models...
-✓ YOLO model loaded: models/yolov8n_smart_cane.pt
-✓ EasyOCR loaded (English + Hindi)
-✅ All models loaded successfully!
+The server will start on `http://0.0.0.0:4000`
 
-🚀 Starting Smart Assistive Cane Backend
-Server: http://localhost:4000
-MQTT: broker.hivemq.com:1883
-```
+## API Endpoints
 
----
+### 1. Health Check
+**Endpoint:** `GET /`
 
-## 🧪 Testing the Backend
+**Description:** Check if the server is running
 
-### Test 1: Health Check
-
-```bash
-curl http://localhost:4000/health
-```
-
-Response:
+**Response:**
 ```json
 {
-  "status": "online",
-  "timestamp": "2026-01-29T10:30:00",
-  "mqtt_connected": true,
-  "model_loaded": true,
-  "ocr_loaded": true
+  "message": "Welcome to the Smart Cane Backend API"
 }
 ```
 
-### Test 2: Process Image
+### 2. Object Detection
+**Endpoint:** `POST /detect`
 
-```python
-import requests
-import base64
+**Description:** Detect objects in an uploaded image
 
-# Read image and encode to base64
-with open('test_image.jpg', 'rb') as f:
-    image_base64 = base64.b64encode(f.read()).decode()
+**Request:**
+- Method: POST
+- Content-Type: multipart/form-data
+- Body: `image` (file)
 
-# Send to backend
-response = requests.post('http://localhost:4000/process', json={
-    'image': image_base64,
-    'distance': 150  # Distance in cm
-})
-
-print(response.json())
-```
-
-Expected response:
+**Response:**
 ```json
 {
-  "timestamp": "2026-01-29T10:35:00",
-  "distance": 150,
-  "objects": [
-    {
-      "object": "person",
-      "confidence": 92.5,
-      "distance": 150,
-      "bbox": [120, 50, 450, 600]
-    },
-    {
-      "object": "chair",
-      "confidence": 87.3,
-      "distance": 150,
-      "bbox": [500, 200, 700, 550]
-    }
-  ],
-  "ocr": [
-    {
-      "text": "EXIT",
-      "confidence": 95.2,
-      "bbox": [[100, 50], [200, 50], [200, 100], [100, 100]]
-    }
-  ],
-  "summary": {
-    "total_objects": 2,
-    "total_text": 1,
-    "primary_object": "person"
-  },
-  "status": "success"
+  "mode": "detect",
+  "timestamp": 1234567890.123,
+  "data": {
+    "detections": [
+      {
+        "class": "person",
+        "confidence": 0.95,
+        "bbox": [[x1, y1, x2, y2]]
+      }
+    ]
+  }
 }
 ```
 
-### Test 3: Get Detection History
-
+**Example using cURL:**
 ```bash
-curl http://localhost:4000/history
+curl -X POST http://localhost:4000/detect \
+  -F "image=@path/to/your/image.jpg"
 ```
 
-### Test 4: Get Statistics
+### 3. OCR (Text Recognition)
+**Endpoint:** `POST /ocr`
 
-```bash
-curl http://localhost:4000/stats
-```
+**Description:** Extract text from an uploaded image
 
----
+**Request:**
+- Method: POST
+- Content-Type: multipart/form-data
+- Body: `image` (file)
 
-## 🔧 Integration with React Dashboard
-
-### React Component Example
-
-```javascript
-import { useEffect, useState } from 'react';
-import mqtt from 'mqtt';
-
-function SmartCaneDashboard() {
-  const [latestDetection, setLatestDetection] = useState(null);
-  
-  useEffect(() => {
-    // Connect to MQTT broker
-    const client = mqtt.connect('ws://broker.hivemq.com:8000/mqtt');
-    
-    client.on('connect', () => {
-      console.log('Connected to MQTT');
-      
-      // Subscribe to ESP32 data
-      client.subscribe('smart_cane/esp32/data');
-      
-      // Subscribe to AI results
-      client.subscribe('smart_cane/results');
-    });
-    
-    client.on('message', async (topic, message) => {
-      const data = JSON.parse(message.toString());
-      
-      if (topic === 'smart_cane/esp32/data') {
-        // Received data from ESP32
-        console.log('ESP32 Data:', data);
-        
-        // Send to Flask backend
-        const response = await fetch('http://localhost:4000/process', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)
-        });
-        
-        const result = await response.json();
-        setLatestDetection(result);
-        
-        // Send result back to ESP32
-        client.publish('smart_cane/results', JSON.stringify(result));
+**Response:**
+```json
+{
+  "mode": "ocr",
+  "timestamp": 1234567890.123,
+  "data": {
+    "ocr": [
+      {
+        "text": "Hello World",
+        "confidence": 0.98
       }
-      
-      if (topic === 'smart_cane/results') {
-        // Display results on dashboard
-        console.log('AI Results:', data);
-      }
-    });
-    
-    return () => client.end();
-  }, []);
-  
-  return (
-    <div>
-      <h1>Smart Cane Dashboard</h1>
-      {latestDetection && (
-        <div>
-          <h2>Latest Detection</h2>
-          <p>Distance: {latestDetection.distance} cm</p>
-          <h3>Objects:</h3>
-          <ul>
-            {latestDetection.objects.map((obj, i) => (
-              <li key={i}>
-                {obj.object} ({obj.confidence}%)
-              </li>
-            ))}
-          </ul>
-          <h3>Text Detected:</h3>
-          <ul>
-            {latestDetection.ocr.map((text, i) => (
-              <li key={i}>{text.text} ({text.confidence}%)</li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
+    ]
+  }
 }
 ```
 
----
-
-## 🎯 API Endpoints Reference
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | API documentation |
-| `/health` | GET | Server health check |
-| `/process` | POST | Process image (main endpoint) |
-| `/history` | GET | Get all detections |
-| `/latest` | GET | Get latest detection |
-| `/stats` | GET | Get statistics |
-| `/clear` | POST | Clear history |
-
----
-
-## 🔍 Detected Object Classes (COCO)
-
-YOLOv8 can detect 80 objects including:
-
-**Common obstacles:**
-- person, chair, couch, bed, dining table, door, refrigerator
-
-**Vehicles:**
-- bicycle, car, motorcycle, bus, truck, train
-
-**Traffic:**
-- traffic light, fire hydrant, stop sign, parking meter
-
-**Animals:**
-- dog, cat, bird, horse, cow
-
-**Electronics:**
-- laptop, mouse, keyboard, cell phone, tv
-
-[Full list: 80 COCO classes]
-
----
-
-## 📊 Model Performance
-
-**YOLOv8 Nano:**
-- Speed: ~2ms per image (GPU) | ~20ms (CPU)
-- Accuracy: 80-95% for common objects
-- Model size: ~6 MB
-- Perfect for embedded systems
-
-**EasyOCR:**
-- Speed: ~100-500ms per image
-- Languages: English + Hindi
-- Accuracy: 85-95% for clear text
-
----
-
-## 🐛 Troubleshooting
-
-### Model not loading
-```python
-# In app.py, add debug:
-import sys
-print("Python:", sys.version)
-print("PyTorch:", torch.__version__)
-print("Model path exists:", os.path.exists(MODEL_PATH))
+**Example using cURL:**
+```bash
+curl -X POST http://localhost:4000/ocr \
+  -F "image=@path/to/your/image.jpg"
 ```
 
-### MQTT not connecting
-- Check broker URL is correct
-- Ensure no firewall blocking port 1883
-- Try public broker: `broker.hivemq.com`
+## Model Configuration
 
-### Low accuracy
-- Increase confidence threshold in app.py
-- Use better lighting for ESP32-CAM
-- Fine-tune model with custom dataset
+### YOLO Model
+- Currently using: `yolov8n.pt` (YOLOv8 Nano - pretrained)
+- Confidence threshold: 0.4
+- To use a custom fine-tuned model, replace `yolov8n.pt` with your `best.pt` model in the code
 
-### Memory errors
-- Reduce image size before sending
-- Use YOLOv8n (not larger models)
-- Close other applications
+### OCR Model
+- Language: English (`'en'`)
+- GPU: Disabled (set to `False`)
+- To enable GPU, change `gpu=False` to `gpu=True` in the code
 
----
+## Deactivating Virtual Environment
 
-## 📈 Next Steps
+When you're done working, deactivate the virtual environment:
 
-1. **Collect custom data**: Use ESP32-CAM to capture images in your environment
-2. **Fine-tune model**: Upload to Roboflow, label, retrain in Colab
-3. **Add database**: Replace list with MongoDB/PostgreSQL
-4. **Deploy to cloud**: Use Heroku, AWS, or Google Cloud
-5. **Add authentication**: Secure API with JWT tokens
-6. **Real-time alerts**: Send notifications for dangerous obstacles
-
----
-
-## 📝 Custom Training (Optional)
-
-If you want to train on your own data:
-
-1. **Collect images** (500-1000 images)
-2. **Upload to Roboflow**: https://roboflow.com
-3. **Label objects** (draw bounding boxes)
-4. **Export in YOLOv8 format**
-5. **In Colab notebook**, uncomment training section:
-
-```python
-results = model.train(
-    data='path/to/data.yaml',
-    epochs=50,
-    imgsz=640,
-    batch=16
-)
+```bash
+deactivate
 ```
 
-6. **Export trained model**
-7. **Replace** `yolov8n_smart_cane.pt` with new model
+## Project Structure
 
----
+```
+smart_cane_backend/
+│
+├── app.py              # Main Flask application
+├── venv/               # Virtual environment (created after setup)
+├── requirements.txt    # Python dependencies (if available)
+└── README.md          # This file
+```
 
-## 🤝 Support
+## Troubleshooting
 
-**Common issues:**
-- Model accuracy low → Improve lighting, retrain with custom data
-- MQTT not working → Check broker, firewall settings
-- Flask errors → Check Python version (3.8+), dependencies
+### Port Already in Use
+If port 4000 is already in use, change it in `app.py`:
+```python
+app.run(host="0.0.0.0", port=5000, debug=True)  # Change 4000 to 5000
+```
 
-**Contact:**
-For project help, check documentation or ask in comments!
+### GPU Issues with EasyOCR
+If you encounter GPU-related errors, ensure `gpu=False` in the code:
+```python
+ocr_reader = easyocr.Reader(['en'], gpu=False)
+```
 
----
+### Missing Dependencies
+Install individual packages if needed:
+```bash
+pip install flask
+pip install flask-cors
+pip install ultralytics
+pip install pillow
+pip install easyocr
+pip install numpy
+```
 
-## 📄 License
+## Testing the Endpoints
 
-MIT License - Free to use for research and education
+### Method 1: Using Postman (Recommended for Beginners)
 
----
+#### Step 1: Download and Install Postman
+- Download from: https://www.postman.com/downloads/
+- Install and create a free account (optional but recommended)
 
-**Built with ❤️ for assistive technology**
+#### Step 2: Test Health Check Endpoint
+
+1. Open Postman
+2. Click "New" → "HTTP Request"
+3. Set method to: `GET`
+4. Enter URL: `http://localhost:4000/`
+5. Click "Send"
+
+**Expected Response:**
+```json
+{
+  "message": "Welcome to the Smart Cane Backend API"
+}
+```
+
+#### Step 3: Test Object Detection Endpoint
+
+1. Create a new request
+2. Set method to: `POST`
+3. Enter URL: `http://localhost:4000/detect`
+4. Go to "Body" tab
+5. Select "form-data"
+6. In the KEY column, enter: `image`
+7. Hover over the KEY and change type from "Text" to "File" (click the dropdown)
+8. In the VALUE column, click "Select Files" and choose an image file
+9. Click "Send"
+
+**Expected Response:**
+```json
+{
+  "mode": "detect",
+  "timestamp": 1234567890.123,
+  "data": {
+    "detections": [
+      {
+        "class": "person",
+        "confidence": 0.95,
+        "bbox": [[x1, y1, x2, y2]]
+      }
+    ]
+  }
+}
+```
+
+#### Step 4: Test OCR Endpoint
+
+1. Create a new request
+2. Set method to: `POST`
+3. Enter URL: `http://localhost:4000/ocr`
+4. Go to "Body" tab
+5. Select "form-data"
+6. In the KEY column, enter: `image`
+7. Change type to "File"
+8. In the VALUE column, select an image containing text
+9. Click "Send"
+
+**Expected Response:**
+```json
+{
+  "mode": "ocr",
+  "timestamp": 1234567890.123,
+  "data": {
+    "ocr": [
+      {
+        "text": "Hello World",
+        "confidence": 0.98
+      }
+    ]
+  }
+}
+```
+
+**Tips for Postman:**
+- Save your requests in a Collection for easy reuse
+- Use the "Save" button to organize your API tests
+- Check the "Status" code (should be 200 OK for successful requests)
+
+
+**Note:** Make sure to keep your virtual environment activated while working on the project. Always use `venv` as the name for your virtual environment to maintain consistency across the team.
