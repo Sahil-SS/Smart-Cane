@@ -74,3 +74,46 @@ button {
   border-radius: 10px;
   margin-top: 10px;
 }
+/* 🚨 Emergency Mode Styling */
+.emergency-mode {
+  animation: pulse-red 1s infinite;
+  min-height: 100vh;
+  transition: background-color 0.3s ease;
+}
+
+@keyframes pulse-red {
+  0% { background-color: rgba(220, 38, 38, 0.05); box-shadow: inset 0 0 50px rgba(220, 38, 38, 0.2); }
+  50% { background-color: rgba(220, 38, 38, 0.3); box-shadow: inset 0 0 150px rgba(220, 38, 38, 0.6); }
+  100% { background-color: rgba(220, 38, 38, 0.05); box-shadow: inset 0 0 50px rgba(220, 38, 38, 0.2); }
+}
+
+/* SOS Banner at the top */
+.sos-banner {
+  background: #dc2626;
+  color: white;
+  padding: 20px;
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  border: 4px solid white;
+  font-weight: 800;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+}
+
+.sos-dismiss {
+  background: white;
+  color: #dc2626;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.sos-dismiss:hover {
+  transform: scale(1.05);
+  background: #f1f5f9;
+}
