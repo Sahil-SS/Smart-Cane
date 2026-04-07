@@ -415,7 +415,7 @@ export default function Dashboard() {
 
           {/* ── Stats Row ── */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard
+            {/* <StatCard
               icon="⬡"
               label="WS Status"
               value={wsConnected ? "ONLINE" : "OFFLINE"}
@@ -426,7 +426,7 @@ export default function Dashboard() {
               }
               valueClass={wsConnected ? "text-emerald-400" : "text-red-400"}
               sub={lastSeen ? `Last ping: ${lastSeen}` : "Never connected"}
-            />
+            /> */}
             <StatCard
               icon="◉"
               label="Events Received"
@@ -435,14 +435,14 @@ export default function Dashboard() {
               valueClass="text-cyan-400"
               sub="Total perception events"
             />
-            <StatCard
+            {/* <StatCard
               icon="⦿"
               label="Auto Captures"
               value={captureCount}
               colorClass="bg-gradient-to-r from-violet-400/60 to-transparent"
               valueClass="text-violet-400"
               sub="Triggered by sensor"
-            />
+            /> */}
             <StatCard
               icon="🚨"
               label="SOS Alerts"
