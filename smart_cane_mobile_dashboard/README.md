@@ -1,50 +1,94 @@
-# Welcome to your Expo app 👋
+# 🦯 Smart Cane Mobile Dashboard
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A powerful, accessible React Native (Expo) companion app designed for an IoT Smart Cane. This app bridges the gap between physical hardware sensors, mobile hardware, and advanced AI perception. 
 
-## Get started
+It receives ultrasonic sensor triggers via WebSockets, autonomously captures images using a custom "Terminator-style" camera UI, processes the environment through a local Flask AI backend (YOLOv8 + EasyOCR), and provides real-time auditory feedback to the user.
 
-1. Install dependencies
+## ✨ Key Features
+* **🔌 Real-Time IoT Bridge:** Maintains an auto-reconnecting WebSocket link to Node-RED.
+* **📸 Auto-Triggered Perception:** Automatically captures photos when the cane's ultrasonic sensor detects an obstacle.
+* **🧠 AI Computer Vision:** Seamlessly routes images to a Flask backend for Object Detection and Optical Character Recognition (OCR).
+* **🔊 Auditory & Tactile Feedback:** Uses native Text-to-Speech (TTS) to read results and the iOS/Android Haptic Engine for physical interface feedback.
+* **🚨 Emergency SOS System:** Features a full-screen flashing lock screen, a relentless looping audio alarm, and automated Telegram alerts to emergency contacts.
+* **📜 Perception Log:** Maintains a rolling history of detected objects with a one-tap audio replay feature.
 
-   ```bash
-   npm install
-   ```
+---
 
-2. Start the app
+## 🛠️ Prerequisites
 
-   ```bash
-   npx expo start
-   ```
+Before you begin, ensure you have the following installed and running:
+* [Node.js](https://nodejs.org/) (v18 or newer recommended)
+* [Expo Go App](https://expo.dev/client) installed on your physical iOS or Android device.
+* The **Smart Cane Flask Backend** running locally (Port 4000).
+* **Node-RED** running locally with the MQTT-to-WebSocket flow active (Port 1880).
 
-In the output, you'll find options to open the app in a
+> **⚠️ CRITICAL:** Your physical smartphone and the computer running the Flask/Node-RED servers **MUST** be connected to the exact same Wi-Fi network.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+---
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 🚀 Installation & Setup
 
-## Get a fresh project
-
-When you're ready, run:
-
+**1. Clone the repository**
 ```bash
-npm run reset-project
+git clone [https://github.com/yourusername/smart-cane-app.git](https://github.com/yourusername/smart-cane-app.git)
+cd smart-cane-app
 ```
+**2. Install dependencies**
+```bash
+npm install
+```
+**3. Configure your Local IP Address**
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Because the app runs on a physical phone, it cannot use localhost. You must point the app to your computer's local Wi-Fi IP address.
 
-## Learn more
+* Open constants/network.ts.
+* Replace LOCAL_IP with your computer's actual IPv4 address (e.g., 192.168.1.15).
 
-To learn more about developing your project with Expo, look at the following resources:
+**4. Configure Environment Variables**
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Create a .env file in the root directory (next to package.json) and add your Telegram bot credentials for the SOS feature:
+```JS
+EXPO_PUBLIC_TELEGRAM_BOT_TOKEN=your_bot_token_here
+EXPO_PUBLIC_TELEGRAM_CHAT_ID=your_chat_id_here
+```
+**5. Start the Development Server**
+```bash
+npx expo start
+```
+Scan the QR code that appears in your terminal using your phone's camera (iOS) or the Expo Go app (Android).
 
-## Join the community
+## 📂 Folder Structure
 
-Join our community of developers creating universal apps.
+```
+Smart_cane_mobile_dashboard
+├── 📁 app
+│   ├── 📄 _layout.tsx
+│   └── 📄 index.tsx
+├── 📁 assets
+│   └── 🎵 alarm.mp3
+├── 📁 components
+│   ├── 📄 CameraCapture.tsx
+│   ├── 📄 ModeToggle.tsx
+│   ├── 📄 Navbar.tsx
+│   └── 📄 ResultPanel.tsx
+├── 📁 constants
+│   └── 📄 network.ts
+├── 📁 lib
+│   ├── 📄 api.ts
+│   └── 📄 tts.ts
+├── ⚙️ .gitignore
+├── 📝 README.md
+├── ⚙️ app.json
+├── 📄 eslint.config.js
+├── ⚙️ package-lock.json
+├── ⚙️ package.json
+└── ⚙️ tsconfig.json
+```
+## 🧰 Troubleshooting
+* "Network Request Failed" / Cannot connect to Backend: Double-check that your computer's IPv4 address hasn't changed. Routers often reassign local IPs. Update constants/network.ts if it has.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+* Camera isn't auto-firing: Ensure you clicked "Grant Permission" on the phone screen. The camera component must be mounted and active to accept Node-RED triggers.
+
+* I don't feel any vibrations: Haptics do not work in computer emulators. You must test the app on a physical device. Ensure "System Haptics" are enabled in your phone's OS settings and battery saver is off.
+
+* Alarms are stacking/looping infinitely: Make sure you are using the updated stopAlarm() cleanup logic inside index.tsx so old audio instances are purged.
