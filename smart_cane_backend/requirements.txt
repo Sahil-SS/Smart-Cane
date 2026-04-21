@@ -1,7 +1,17 @@
+# flask
+# ultralytics
+# opencv-python
+# torch
+# pillow
+# flask-cors
+# easyocr
+
 flask
+flask-cors
 ultralytics
-opencv-python
+opencv-python-headless
 torch
 pillow
-flask-cors
 easyocr
+numpy
+waitress

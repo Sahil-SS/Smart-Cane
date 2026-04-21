@@ -20,10 +20,14 @@ import ModeToggle from "../components/ModeToggle";
 import CameraCapture from "../components/CameraCapture";
 import ResultPanel from "../components/ResultPanel";
 import { sendImageToBackend } from "../lib/api";
+import { tryFetchIPCamera } from "../lib/ipCamera";
 import { speak } from "../lib/tts";
 import { NODE_RED_WS_URL } from "../constants/network";
 
-// ─── CUSTOM UI WRAPPERS ──────────────────────────────────────
+// ─── TYPES ────────────────────────────────────────────────────
+type CameraSource = "ip" | "local" | "idle";
+
+// ─── CUSTOM UI WRAPPERS ───────────────────────────────────────
 function StatCard({ icon, label, value, colorClass, valueColor, sub }: any) {
   return (
     <View style={styles.statCard}>
@@ -50,43 +54,50 @@ function Panel({ title, children }: any) {
   );
 }
 
-// ─── MAIN DASHBOARD APP ────────────────────────────────────────────────────────
+// ─── MAIN DASHBOARD ───────────────────────────────────────────
 export default function Dashboard() {
-  // Application State
+  // ── Application State ──
   const [mode, setMode] = useState("detect");
   const [response, setResponse] = useState<any>(null);
   const [capturing, setCapturing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
 
-  // Hardware & Network State
+  // ── Hardware & Network State ──
   const [isEmergency, setIsEmergency] = useState(false);
   const [autoTrigger, setAutoTrigger] = useState(0);
   const [wsConnected, setWsConnected] = useState(false);
 
-  // Dashboard Counters
+  // ── NEW: Camera source tracking ──
+  const [cameraSource, setCameraSource] = useState<CameraSource>("idle");
+  const [ipCamAvailable, setIpCamAvailable] = useState<boolean | null>(null); // null = unknown
+
+  // ── Dashboard Counters ──
   const [eventCount, setEventCount] = useState(0);
   const [sosCount, setSosCount] = useState(0);
 
-  // Mutable References (Safe from re-renders)
+  // ── Mutable References ──
   const modeRef = useRef(mode);
   const pendingSensorDataRef = useRef({ distance: null as any, dir: "" });
   const wsRef = useRef<WebSocket | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const emergencyRef = useRef(false);
+  // Prevent ghost reconnects
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Animation Engine
+  // ── Animation Engine ──
   const flashAnim = useRef(new Animated.Value(0)).current;
 
-  // Keep mode ref updated for API calls
+  // Keep mode ref updated
   useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
 
   // ─── FLASHING RED ANIMATION ───
   useEffect(() => {
+    let loop: Animated.CompositeAnimation;
     if (isEmergency) {
-      Animated.loop(
+      loop = Animated.loop(
         Animated.sequence([
           Animated.timing(flashAnim, {
             toValue: 1,
@@ -99,11 +110,16 @@ export default function Dashboard() {
             useNativeDriver: false,
           }),
         ]),
-      ).start();
+      );
+      loop.start();
     } else {
       flashAnim.stopAnimation();
       flashAnim.setValue(0);
     }
+
+    return () => {
+      if (loop) loop.stop();
+    };
   }, [isEmergency]);
 
   const flashColor = flashAnim.interpolate({
@@ -128,14 +144,13 @@ export default function Dashboard() {
           }
 
           if (data.trigger) {
-            console.log("🎯 Node-RED trigger received, firing camera!");
+            console.log("🎯 Node-RED trigger received");
             pendingSensorDataRef.current = {
               distance: data.distance,
               dir: data.dir,
             };
-            setCapturing(true);
-            setAutoTrigger((c) => c + 1); // Triggers CameraCapture component
-            setTimeout(() => setCapturing(false), 2000);
+            // go through the IP cam → local fallback pipeline
+            handleAutoTrigger();
           }
         } catch (err) {
           console.error("WS Parse Error:", err);
@@ -144,13 +159,19 @@ export default function Dashboard() {
 
       wsRef.current.onclose = () => {
         setWsConnected(false);
-        setTimeout(connectWS, 4000); // Auto-reconnect
+        reconnectTimeoutRef.current = setTimeout(connectWS, 4000); // Auto-reconnect stored in ref
       };
       wsRef.current.onerror = () => setWsConnected(false);
     };
 
     connectWS();
-    return () => wsRef.current?.close();
+
+    return () => {
+      wsRef.current?.close();
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+    };
   }, []);
 
   // ─── AUDIO ENGINE ───
@@ -172,7 +193,7 @@ export default function Dashboard() {
 
   // ─── EMERGENCY LOGIC ───
   const triggerEmergency = useCallback(async () => {
-    if (emergencyRef.current) return; // Prevent duplicate triggers
+    if (emergencyRef.current) return;
 
     emergencyRef.current = true;
     setIsEmergency(true);
@@ -182,7 +203,7 @@ export default function Dashboard() {
     speak("Emergency detected. Sounding alarm and notifying contacts.");
 
     try {
-      await stopAlarm(); // Ruthlessly kill zombie sounds first
+      await stopAlarm();
 
       const { sound } = await Audio.Sound.createAsync(
         require("../assets/alarm.mp3"),
@@ -221,32 +242,40 @@ export default function Dashboard() {
 
   // ─── AI DATA PIPELINE ───
   const handleEvent = useCallback((eventData: any) => {
-    // 1. Merge ESP32 hardware data into AI software data
-    if (pendingSensorDataRef.current.distance && eventData.mode === "detect") {
-      eventData.data.distance = pendingSensorDataRef.current.distance;
-      eventData.data.dir = pendingSensorDataRef.current.dir;
+    // 1. Deep Clone payload so we don't mutate the original network response safely
+    const enrichedData = {
+      ...eventData,
+      data: { ...eventData.data },
+    };
+
+    if (
+      pendingSensorDataRef.current.distance &&
+      enrichedData.mode === "detect"
+    ) {
+      enrichedData.data.distance = pendingSensorDataRef.current.distance;
+      enrichedData.data.dir = pendingSensorDataRef.current.dir;
     }
 
-    setResponse(eventData);
+    setResponse(enrichedData);
     setEventCount((c) => c + 1);
 
-    // 2. Generate Speech String
+    // 2. Build speech string
     let speech = "";
-    if (eventData.mode === "detect") {
-      const detections = eventData.data?.detections || [];
-      const dist = eventData.data?.distance;
-      const dir = eventData.data?.dir || "ahead";
+    if (enrichedData.mode === "detect") {
+      const detections = enrichedData.data?.detections || [];
+      const dist = enrichedData.data?.distance;
+      const dir = enrichedData.data?.dir || "ahead";
       if (detections.length > 0) {
         const objNames = detections.map((d: any) => d.class).join(", ");
         speech = `${objNames}, ${dist} centimeters to your ${dir}`;
       } else if (dist) {
         speech = `Unidentified obstacle, ${dist} centimeters to your ${dir}`;
       }
-    } else if (eventData.mode === "ocr") {
-      speech = eventData.data?.ocr?.map((t: any) => t.text).join(", ");
+    } else if (enrichedData.mode === "ocr") {
+      speech = enrichedData.data?.ocr?.map((t: any) => t.text).join(", ");
     }
 
-    // 3. Output Audio & Save to Log
+    // 3. Output audio & save to log
     if (speech) {
       speak(speech);
       const newEntry = {
@@ -258,23 +287,67 @@ export default function Dashboard() {
         }),
         text: speech,
       };
-      setHistory((prev) => [newEntry, ...prev].slice(0, 10)); // Keep last 10 entries max
+      setHistory((prev) => [newEntry, ...prev].slice(0, 10));
     }
 
-    // 4. Reset Sensor Ref
+    // 4. Reset sensor ref
     pendingSensorDataRef.current = { distance: null, dir: "" };
   }, []);
+
+  // ─── IP CAM → LOCAL FALLBACK PIPELINE ───
+  const handleAutoTrigger = useCallback(async () => {
+    setIsProcessing(true);
+    setCameraSource("idle");
+
+    try {
+      const result = await tryFetchIPCamera();
+
+      if (result.success) {
+        // ── IP Camera path ──
+        console.log("📡 IP camera reachable — sending URL to backend");
+        setCameraSource("ip");
+        setIpCamAvailable(true);
+
+        const res = await sendImageToBackend(
+          result.url,
+          modeRef.current,
+          true, // isRemoteUrl = true → backend downloads it
+        );
+        if (res) handleEvent(res);
+
+        setCameraSource("idle");
+        setIsProcessing(false);
+      } else {
+        // ── Local camera fallback ──
+        console.warn(
+          `⚠️ IP camera unavailable (${result.reason}) — falling back to local camera`,
+        );
+        setCameraSource("local");
+        setIpCamAvailable(false);
+
+        setCapturing(true);
+        setAutoTrigger((c) => c + 1);
+        setTimeout(() => setCapturing(false), 2000);
+      }
+    } catch (err) {
+      console.error("handleAutoTrigger failed:", err);
+      speak("Capture pipeline failed.");
+      setCameraSource("idle");
+      setIsProcessing(false);
+    }
+  }, [handleEvent]);
 
   const handleImageReady = async (uri: string) => {
     setIsProcessing(true);
     try {
-      const res = await sendImageToBackend(uri, modeRef.current);
+      const res = await sendImageToBackend(uri, modeRef.current, false);
       if (res) handleEvent(res);
     } catch (error) {
       console.error(error);
       speak("Backend connection failed.");
     } finally {
       setIsProcessing(false);
+      setCameraSource("idle");
     }
   };
 
@@ -295,8 +368,6 @@ export default function Dashboard() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
-
-      {/* Hides the white Navigation Header */}
       <Stack.Screen options={{ headerShown: false }} />
 
       <Navbar connected={wsConnected} />
@@ -305,7 +376,7 @@ export default function Dashboard() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        {/* STATS ROW */}
+        {/* ── STATS ROW ── */}
         <View style={styles.statsRow}>
           <View style={{ flex: 1 }}>
             <StatCard
@@ -327,9 +398,39 @@ export default function Dashboard() {
               sub="Emergency triggers"
             />
           </View>
+          <View style={{ flex: 1 }}>
+            <StatCard
+              icon="📡"
+              label="IP CAMERA"
+              value={
+                ipCamAvailable === null
+                  ? "—"
+                  : ipCamAvailable
+                    ? "ONLINE"
+                    : "OFFLINE"
+              }
+              colorClass={
+                ipCamAvailable === null
+                  ? "rgba(255,255,255,0.1)"
+                  : ipCamAvailable
+                    ? "#34d399"
+                    : "#f59e0b"
+              }
+              valueColor={
+                ipCamAvailable === null
+                  ? "rgba(255,255,255,0.3)"
+                  : ipCamAvailable
+                    ? "#34d399"
+                    : "#f59e0b"
+              }
+              sub={
+                ipCamAvailable === false ? "Using local cam" : "External feed"
+              }
+            />
+          </View>
         </View>
 
-        {/* MAIN GRID */}
+        {/* ── MAIN GRID ── */}
         <View style={styles.grid}>
           <View style={styles.column}>
             <Panel title="ANALYSIS MODE">
@@ -340,6 +441,7 @@ export default function Dashboard() {
                 onImageReady={handleImageReady}
                 capturing={capturing}
                 autoTrigger={autoTrigger}
+                cameraSource={cameraSource}
               />
             </Panel>
           </View>
@@ -359,7 +461,7 @@ export default function Dashboard() {
         </View>
       </ScrollView>
 
-      {/* 🚨 FULL SCREEN SOS OVERLAY */}
+      {/* ── SOS FULL-SCREEN OVERLAY ── */}
       {isEmergency && (
         <Animated.View
           style={[styles.sosOverlay, { backgroundColor: flashColor }]}
@@ -381,7 +483,7 @@ export default function Dashboard() {
   );
 }
 
-// ─── STYLES ──────────────────────────────────────────────────────────
+// ─── STYLES ──────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -452,7 +554,7 @@ const styles = StyleSheet.create({
   },
   resultWrapper: { minHeight: 250 },
 
-  // 🚨 OVERLAY STYLES
+  // ── SOS OVERLAY ──
   sosOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 999,

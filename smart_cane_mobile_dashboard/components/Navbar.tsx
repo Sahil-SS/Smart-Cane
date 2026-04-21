@@ -5,8 +5,10 @@ export default function Navbar({ connected }: { connected: boolean }) {
   const pulseAnim = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
+    let loop: Animated.CompositeAnimation;
+
     if (connected) {
-      Animated.loop(
+      loop = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
             toValue: 1,
@@ -19,11 +21,17 @@ export default function Navbar({ connected }: { connected: boolean }) {
             useNativeDriver: true,
           }),
         ]),
-      ).start();
+      );
+      loop.start();
     } else {
       pulseAnim.stopAnimation();
       pulseAnim.setValue(1);
     }
+
+    // Safely clean up the animation when the component unmounts
+    return () => {
+      if (loop) loop.stop();
+    };
   }, [connected, pulseAnim]);
 
   return (

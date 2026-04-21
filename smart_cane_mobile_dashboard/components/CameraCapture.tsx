@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useRef, useState, useEffect } from "react";
 import {
@@ -12,11 +11,20 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 
+interface CameraCaptureProps {
+  onImageReady: (uri: string) => void;
+  capturing: boolean;
+  autoTrigger: number;
+  /** Optional label shown in the overlay to indicate which camera source is active */
+  cameraSource?: "ip" | "local" | "idle";
+}
+
 export default function CameraCapture({
   onImageReady,
   capturing,
   autoTrigger,
-}: any) {
+  cameraSource = "idle",
+}: CameraCaptureProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<"back" | "front">("back");
   const cameraRef = useRef<any>(null);
@@ -40,7 +48,21 @@ export default function CameraCapture({
       ]),
     ).start();
   }, []);
+  const handleCapture = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    if (cameraRef.current) {
+      try {
+        const photo = await cameraRef.current.takePictureAsync({
+          quality: 0.8,
+        });
+        onImageReady(photo.uri);
+      } catch (err) {
+        console.error("Local capture failed:", err);
+      }
+    }
+  };
 
+  // Only fire local capture when autoTrigger increments (IP cam fallback path)
   useEffect(() => {
     if (autoTrigger > 0) handleCapture();
   }, [autoTrigger]);
@@ -57,21 +79,9 @@ export default function CameraCapture({
     );
   }
 
-  const handleCapture = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    if (cameraRef.current) {
-      try {
-        const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.8,
-        });
-        onImageReady(photo.uri);
-      } catch (err) {}
-    }
-  };
-
   const handleUpload = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    let result = await ImagePicker.launchImageLibraryAsync({
+    const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,
     });
@@ -83,11 +93,18 @@ export default function CameraCapture({
     setFacing((current) => (current === "back" ? "front" : "back"));
   };
 
+  // ─── Source badge config ───
+  const sourceBadge = {
+    ip: { label: "📡 IP CAM", color: "#22d3ee" },
+    local: { label: "📷 LOCAL CAM", color: "#f59e0b" },
+    idle: { label: "◉ STANDBY", color: "rgba(255,255,255,0.3)" },
+  }[cameraSource];
+
   return (
     <View style={styles.container}>
       <CameraView style={styles.camera} ref={cameraRef} facing={facing} />
 
-      {/* 🚨 THE TERMINATOR OVERLAY */}
+      {/* ─── TERMINATOR OVERLAY (reticle + scan line) ─── */}
       <View style={styles.reticleContainer}>
         <View style={styles.reticleTopLeft} />
         <View style={styles.reticleTopRight} />
@@ -98,16 +115,26 @@ export default function CameraCapture({
         />
       </View>
 
+      {/* ─── PROCESSING OVERLAY ─── */}
       {capturing && (
         <View style={styles.overlay}>
           <Text style={styles.overlayText}>⟳ PROCESSING...</Text>
         </View>
       )}
 
+      {/* ─── CAMERA SOURCE BADGE (top-left, replaces blank area) ─── */}
+      <View style={[styles.sourceBadge, { borderColor: sourceBadge.color }]}>
+        <Text style={[styles.sourceBadgeText, { color: sourceBadge.color }]}>
+          {sourceBadge.label}
+        </Text>
+      </View>
+
+      {/* ─── FLIP BUTTON ─── */}
       <TouchableOpacity style={styles.flipBtn} onPress={toggleCamera}>
         <Text style={styles.flipText}>🔄 FLIP</Text>
       </TouchableOpacity>
 
+      {/* ─── CAPTURE / UPLOAD CONTROLS ─── */}
       <View style={styles.controls}>
         <TouchableOpacity
           style={[styles.actionBtn, styles.uploadBtn]}
@@ -145,7 +172,7 @@ const styles = StyleSheet.create({
   btnText: { color: "#000", fontWeight: "bold", fontFamily: "monospace" },
   camera: { flex: 1 },
 
-  // 🚨 UI Upgrades
+  // ─── RETICLE ───
   reticleContainer: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
@@ -204,6 +231,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
   },
 
+  // ─── OVERLAYS ───
   overlay: {
     position: "absolute",
     top: 10,
@@ -220,6 +248,26 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     fontFamily: "monospace",
   },
+
+  // ─── SOURCE BADGE (new) ───
+  sourceBadge: {
+    position: "absolute",
+    top: 40,
+    left: 10,
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  sourceBadgeText: {
+    fontSize: 9,
+    fontWeight: "bold",
+    letterSpacing: 1.5,
+    fontFamily: "monospace",
+  },
+
+  // ─── BUTTONS ───
   flipBtn: {
     position: "absolute",
     top: 10,
@@ -253,7 +301,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     backgroundColor: "rgba(0,0,0,0.7)",
-    backdropFilter: "blur(10px)",
   },
   uploadBtn: { borderColor: "rgba(34, 211, 238, 0.3)" },
   uploadText: {
