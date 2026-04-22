@@ -1,17 +1,34 @@
+# # flask
+# # ultralytics
+# # opencv-python
+# # torch
+# # pillow
+# # flask-cors
+# # easyocr
+
 # flask
+# flask-cors
 # ultralytics
-# opencv-python
+# opencv-python-headless
 # torch
 # pillow
-# flask-cors
 # easyocr
+# numpy
+# waitress
+# gunicorn
 
 flask
 flask-cors
 ultralytics
+# Using headless version to avoid libGL conflicts in Docker
 opencv-python-headless
+# Torch and torchvision are needed specifically for YOLO/EasyOCR
 torch
+torchvision
 pillow
 easyocr
 numpy
+# Production servers
+gunicorn
+# Optional: only keep waitress if you're testing on Windows
 waitress
