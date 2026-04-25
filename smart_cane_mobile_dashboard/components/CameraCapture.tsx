@@ -64,15 +64,28 @@ export default function CameraCapture({
 
   // Only fire local capture when autoTrigger increments (IP cam fallback path)
   useEffect(() => {
-    if (autoTrigger > 0) handleCapture();
-  }, [autoTrigger]);
+    if (autoTrigger > 0 && cameraSource === "local") {
+      handleCapture();
+    }
+  }, [autoTrigger, cameraSource]);
 
   if (!permission) return <View style={styles.container} />;
-  if (!permission.granted) {
+
+  if (cameraSource === "local" && !permission?.granted) {
     return (
       <View style={[styles.container, styles.center]}>
         <Text style={styles.text}>Camera access needed.</Text>
-        <TouchableOpacity style={styles.btn} onPress={requestPermission}>
+
+        <TouchableOpacity
+          style={styles.btn}
+          onPress={async () => {
+            const res = await requestPermission();
+
+            if (!res.granted) {
+              alert("Go to settings and enable camera permission manually");
+            }
+          }}
+        >
           <Text style={styles.btnText}>Grant Permission</Text>
         </TouchableOpacity>
       </View>
@@ -102,7 +115,15 @@ export default function CameraCapture({
 
   return (
     <View style={styles.container}>
-      <CameraView style={styles.camera} ref={cameraRef} facing={facing} />
+      {cameraSource === "local" ? (
+        <CameraView style={styles.camera} ref={cameraRef} facing={facing} />
+      ) : (
+        <View style={[styles.camera, styles.center]}>
+          <Text style={{ color: "white", fontFamily: "monospace" }}>
+            {cameraSource === "ip" ? "📡 Using IP Camera" : "◉ Standby"}
+          </Text>
+        </View>
+      )}
 
       {/* ─── TERMINATOR OVERLAY (reticle + scan line) ─── */}
       <View style={styles.reticleContainer}>

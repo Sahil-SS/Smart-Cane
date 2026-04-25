@@ -3,6 +3,8 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from ultralytics import YOLO
 from PIL import Image, UnidentifiedImageError
+import requests
+from io import BytesIO
 import easyocr
 import numpy as np
 
@@ -42,29 +44,42 @@ def home():
 
 @app.route("/detect", methods=["POST"])
 def detect():
-    if "image" not in request.files:
-        return jsonify({"error": "No image provided"}), 400
-
     try:
-        image_file = request.files["image"]
-        # Enforce RGB to prevent crashes from weird image formats/transparency
-        img = Image.open(image_file.stream).convert("RGB")
+        # ─── CASE 1: IP CAMERA (JSON with URL) ───
+        if request.is_json:
+            image_url = request.json.get("image_url")
+
+            if not image_url:
+                return jsonify({"error": "No image_url provided"}), 400
+
+            try:
+                response = requests.get(image_url, timeout=3)
+                img = Image.open(BytesIO(response.content)).convert("RGB")
+            except Exception as e:
+                return jsonify({"error": f"Failed to fetch image: {str(e)}"}), 400
+
+        # ─── CASE 2: LOCAL CAMERA (file upload) ───
+        elif "image" in request.files:
+            image_file = request.files["image"]
+            img = Image.open(image_file.stream).convert("RGB")
+
+        else:
+            return jsonify({"error": "No image provided"}), 400
+
     except UnidentifiedImageError:
         return jsonify({"error": "Invalid image file received"}), 400
 
-    # LOWERED CONFIDENCE: From 0.4 to 0.25 to catch objects at side angles
-    # verbose=False stops console spam and speeds up execution
+    # ─── YOLO DETECTION ───
     results = model(img, conf=0.25, verbose=False)
 
     detections = []
     for r in results:
         for box in r.boxes:
-            det = {
+            detections.append({
                 "class": r.names[int(box.cls)],
                 "confidence": float(box.conf),
                 "bbox": box.xyxy.tolist()
-            }
-            detections.append(det)
+            })
 
     return jsonify({
         "mode": "detect",
@@ -76,15 +91,31 @@ def detect():
 
 @app.route("/ocr", methods=["POST"])
 def ocr():
-    if "image" not in request.files:
-        return jsonify({"error": "No image provided"}), 400
-
     try:
-        image_file = request.files["image"]
-        img = Image.open(image_file.stream).convert("RGB")
+        # ─── CASE 1: IP CAMERA ───
+        if request.is_json:
+            image_url = request.json.get("image_url")
+
+            if not image_url:
+                return jsonify({"error": "No image_url provided"}), 400
+
+            try:
+                response = requests.get(image_url, timeout=3)
+                img = Image.open(BytesIO(response.content)).convert("RGB")
+            except Exception as e:
+                return jsonify({"error": f"Failed to fetch image: {str(e)}"}), 400
+
+        # ─── CASE 2: LOCAL FILE ───
+        elif "image" in request.files:
+            image_file = request.files["image"]
+            img = Image.open(image_file.stream).convert("RGB")
+
+        else:
+            return jsonify({"error": "No image provided"}), 400
+
     except UnidentifiedImageError:
         return jsonify({"error": "Invalid image file received"}), 400
-        
+
     text_results = run_ocr(img)
 
     return jsonify({

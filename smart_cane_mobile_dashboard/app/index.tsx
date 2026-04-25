@@ -70,7 +70,7 @@ export default function Dashboard() {
 
   // ── NEW: Camera source tracking ──
   const [cameraSource, setCameraSource] = useState<CameraSource>("idle");
-  const [ipCamAvailable, setIpCamAvailable] = useState<boolean | null>(null); // null = unknown
+  const [ipCamAvailable, setIpCamAvailable] = useState<boolean | null>(null);
 
   // ── Dashboard Counters ──
   const [eventCount, setEventCount] = useState(0);
@@ -83,7 +83,7 @@ export default function Dashboard() {
   const soundRef = useRef<Audio.Sound | null>(null);
   const emergencyRef = useRef(false);
   // Prevent ghost reconnects
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
 
   // ── Animation Engine ──
   const flashAnim = useRef(new Animated.Value(0)).current;
