@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Animated,
+  Image,
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
@@ -29,6 +30,26 @@ export default function CameraCapture({
   const [facing, setFacing] = useState<"back" | "front">("back");
   const cameraRef = useRef<any>(null);
 
+  // ─── LAST CAPTURED PREVIEW ───
+  const [lastCapturedUri, setLastCapturedUri] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const previewOpacity = useRef(new Animated.Value(0)).current;
+
+  const flashPreview = (uri: string) => {
+    setLastCapturedUri(uri);
+    setShowPreview(true);
+    previewOpacity.setValue(1);
+    // Fade out after 2.5 s
+    Animated.sequence([
+      Animated.delay(1800),
+      Animated.timing(previewOpacity, {
+        toValue: 0,
+        duration: 700,
+        useNativeDriver: true,
+      }),
+    ]).start(() => setShowPreview(false));
+  };
+
   // ─── SCANNING ANIMATION ───
   const scanAnim = useRef(new Animated.Value(0)).current;
 
@@ -48,6 +69,7 @@ export default function CameraCapture({
       ]),
     ).start();
   }, []);
+
   const handleCapture = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     if (cameraRef.current) {
@@ -55,6 +77,7 @@ export default function CameraCapture({
         const photo = await cameraRef.current.takePictureAsync({
           quality: 0.8,
         });
+        flashPreview(photo.uri);
         onImageReady(photo.uri);
       } catch (err) {
         console.error("Local capture failed:", err);
@@ -98,7 +121,11 @@ export default function CameraCapture({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,
     });
-    if (!result.canceled) onImageReady(result.assets[0].uri);
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      flashPreview(uri);
+      onImageReady(uri);
+    }
   };
 
   const toggleCamera = () => {
@@ -135,6 +162,16 @@ export default function CameraCapture({
           style={[styles.scanLine, { transform: [{ translateY: scanAnim }] }]}
         />
       </View>
+
+      {/* ─── LAST CAPTURED PREVIEW (bottom-right thumbnail) ─── */}
+      {showPreview && lastCapturedUri && (
+        <Animated.View style={[styles.previewThumb, { opacity: previewOpacity }]}>
+          <Image source={{ uri: lastCapturedUri }} style={styles.previewImage} />
+          <View style={styles.previewBadge}>
+            <Text style={styles.previewBadgeText}>✓ CAPTURED</Text>
+          </View>
+        </Animated.View>
+      )}
 
       {/* ─── PROCESSING OVERLAY ─── */}
       {capturing && (
@@ -335,6 +372,39 @@ const styles = StyleSheet.create({
   captureText: {
     color: "#ef4444",
     fontSize: 12,
+    fontWeight: "bold",
+    letterSpacing: 1,
+    fontFamily: "monospace",
+  },
+
+  // ─── LAST CAPTURED PREVIEW ───
+  previewThumb: {
+    position: "absolute",
+    bottom: 60,
+    right: 10,
+    width: 72,
+    height: 72,
+    borderRadius: 8,
+    overflow: "hidden",
+    borderWidth: 1.5,
+    borderColor: "#34d399",
+  },
+  previewImage: {
+    width: "100%",
+    height: "100%",
+  },
+  previewBadge: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(52, 211, 153, 0.85)",
+    paddingVertical: 2,
+    alignItems: "center",
+  },
+  previewBadgeText: {
+    color: "#000",
+    fontSize: 7,
     fontWeight: "bold",
     letterSpacing: 1,
     fontFamily: "monospace",

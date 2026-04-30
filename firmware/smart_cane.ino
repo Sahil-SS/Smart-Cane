@@ -23,6 +23,10 @@ Servo myservo;
 #define SOS_BUTTON_PIN 14  
 #define RED_LED_PIN 22     
 
+// 🆕 NEW LEDS
+#define WIFI_LED_PIN 25       // Green LED → lights up when WiFi connected
+#define DETECT_LED_PIN 26     // Blue LED → lights up when system is ready to detect
+
 // ---------------- CONFIG ----------------
 const int DIST_THRESHOLD = 20; 
 const unsigned long RESET_TIMEOUT = 7000;   
@@ -56,6 +60,12 @@ void setup() {
   pinMode(SOS_BUTTON_PIN, INPUT_PULLUP);
   pinMode(RED_LED_PIN, OUTPUT);
 
+  // 🆕 NEW LED PINS INIT
+  pinMode(WIFI_LED_PIN, OUTPUT);
+  pinMode(DETECT_LED_PIN, OUTPUT);
+  digitalWrite(WIFI_LED_PIN, LOW);    // Off until WiFi connects
+  digitalWrite(DETECT_LED_PIN, LOW);  // Off until system is ready
+
   ESP32PWM::allocateTimer(0);
   myservo.setPeriodHertz(50);
   myservo.attach(SERVO_PIN, 500, 2400);
@@ -73,9 +83,15 @@ void setup() {
   Serial.print("[BOOT] IP Address: ");
   Serial.println(WiFi.localIP());
 
+  // 🆕 WiFi connected → turn on WiFi LED
+  digitalWrite(WIFI_LED_PIN, HIGH);
+
   client.setServer(mqtt_server, 1883);
 
   Serial.println("[BOOT] System Ready 🚀");
+
+  // 🆕 System ready to detect → turn on Detection LED
+  digitalWrite(DETECT_LED_PIN, HIGH);
 }
 
 // ---------------- MQTT RECONNECT ----------------
@@ -115,6 +131,9 @@ void loop() {
       lockedSensor = 0;
       myservo.write(90);
 
+      // 🆕 Turn off detection LED during SOS
+      digitalWrite(DETECT_LED_PIN, LOW);
+
       // Blink LED
       for(int i=0; i<5; i++) {
         digitalWrite(RED_LED_PIN, HIGH); delay(100);
@@ -152,6 +171,9 @@ void loop() {
       isCoolingDown = false;
       lockedSensor = 0;
       myservo.write(90);
+
+      // 🆕 Cooldown done → system ready again → turn detection LED back ON
+      digitalWrite(DETECT_LED_PIN, HIGH);
     }
 
     delay(500);
@@ -174,19 +196,22 @@ void loop() {
     lockedSensor = 1;
     dir = "Left";
     dist = l;
-    myservo.write(150);
+    delay(80);
+    myservo.write(120);
   } 
   else if (c < DIST_THRESHOLD) {
     lockedSensor = 2;
     dir = "Center";
     dist = c;
+    delay(80);
     myservo.write(90);
   } 
   else if (r < DIST_THRESHOLD) {
     lockedSensor = 3;
     dir = "Right";
     dist = r;
-    myservo.write(30);
+    delay(80);
+    myservo.write(60);
   }
 
   // =========================
@@ -204,6 +229,9 @@ void loop() {
     } else {
       Serial.println("[MQTT] Data send failed ❌");
     }
+
+    // 🆕 Object detected → entering cooldown → turn detection LED OFF
+    digitalWrite(DETECT_LED_PIN, LOW);
 
     isCoolingDown = true;
     cooldownStart = millis();
